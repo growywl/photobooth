@@ -13,18 +13,18 @@
         body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
         .card { width: min(900px, 95vw); background: rgba(15, 23, 42, 0.85); border-radius: 22px; padding: 2.2rem; text-align: center; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); }
         h1 { margin-top: 0; letter-spacing: 0.12em; text-transform: uppercase; font-size: 1.5rem; }
-        .preview-wrapper { position: relative; margin: 1.5rem auto; width: min(720px, 90vw); aspect-ratio: 4 / 3; border-radius: 16px; overflow: hidden; background: rgba(148, 163, 184, 0.08); display: flex; align-items: center; justify-content: center; }
-        .preview-wrapper video { width: 100%; height: 100%; object-fit: cover; }
-        .frame-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+        .preview-wrapper { position: relative; margin: 1.5rem auto; width: min(720px, 90vw); overflow: hidden; border-radius: 18px; background: rgba(148, 163, 184, 0.08); }
+        .preview-wrapper video { position: absolute; object-fit: cover; border-radius: 12px; }
+        .frame-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
         .preview-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 1rem; font-size: 1rem; opacity: 0.9; background: rgba(2, 6, 23, 0.6); backdrop-filter: blur(2px); }
         .preview-placeholder[hidden] { display: none; }
-        .countdown-overlay { position: absolute; top: 8%; right: 10%; font-size: 3rem; font-weight: 700; letter-spacing: 0.08em; text-shadow: 0 8px 20px rgba(15, 23, 42, 0.6); pointer-events: none; }
+        .countdown-overlay { position: absolute; top: 5%; right: 6%; font-size: 3.2rem; font-weight: 700; letter-spacing: 0.08em; text-shadow: 0 8px 20px rgba(15, 23, 42, 0.6); pointer-events: none; }
         #status { margin: 1.1rem 0; font-size: 1.1rem; min-height: 1.5rem; opacity: 0.8; }
         button.primary { background: linear-gradient(135deg, #38bdf8, #0ea5e9); border: none; color: #0f172a; font-weight: 600; padding: 0.95rem 2.4rem; border-radius: 999px; cursor: pointer; font-size: 1.05rem; transition: transform 0.2s ease; display: inline-flex; align-items: center; gap: 0.5rem; }
         button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
         button.primary:not(:disabled):hover { transform: translateY(-2px); }
         #photoContainer { margin-top: 1.5rem; }
-        #photoContainer img { max-width: 100%; border-radius: 16px; border: 8px solid rgba(59, 130, 246, 0.4); box-shadow: 0 10px 40px rgba(15, 23, 42, 0.45); }
+        #photoContainer img { max-width: 100%; border-radius: 16px; box-shadow: 0 10px 40px rgba(15, 23, 42, 0.45); }
         a.back-link { display: inline-block; margin-top: 1.8rem; color: #93c5fd; text-decoration: none; }
         a.back-link:hover { text-decoration: underline; }
     </style>
@@ -33,9 +33,12 @@
     <div class="card">
         <h1>Ready to Capture</h1>
         <p style="opacity:0.75;">We will run a {{ countdown }} second countdown before taking a photo.</p>
-        <div class="preview-wrapper">
-            <video id="preview" autoplay playsinline muted></video>
-            <img id="frameOverlay" class="frame-overlay" src="{{ frame_url }}" alt="Frame overlay">
+        <div
+            class="preview-wrapper"
+            style="aspect-ratio: {{ '%.4f'|format(frame_ratio) }}; --slot-left: {{ '%.4f'|format(slot_left * 100) }}%; --slot-top: {{ '%.4f'|format(slot_top * 100) }}%; --slot-width: {{ '%.4f'|format(slot_width * 100) }}%; --slot-height: {{ '%.4f'|format(slot_height * 100) }}%;"
+        >
+            <video id="preview" autoplay playsinline muted style="top: var(--slot-top); left: var(--slot-left); width: var(--slot-width); height: var(--slot-height);"></video>
+            <img class="frame-overlay" src="{{ frame_url }}" alt="Frame overlay">
             <div id="previewPlaceholder" class="preview-placeholder">Initializing camera preview...</div>
             <div id="countdownOverlay" class="countdown-overlay"></div>
         </div>
@@ -52,6 +55,7 @@
         const countdownOverlay = document.getElementById('countdownOverlay');
         const previewVideo = document.getElementById('preview');
         const previewPlaceholder = document.getElementById('previewPlaceholder');
+
         let previewStream = null;
         let countdownTimer = null;
 
@@ -136,6 +140,7 @@
                 const img = document.createElement('img');
                 img.alt = 'Latest capture';
                 img.src = `${data.photoUrl}?t=${Date.now()}`;
+                photoContainer.innerHTML = '';
                 photoContainer.appendChild(img);
             }
 

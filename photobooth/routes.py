@@ -3,6 +3,7 @@ from typing import Optional
 
 from flask import (
     Blueprint,
+    abort,
     jsonify,
     redirect,
     render_template,
@@ -19,18 +20,31 @@ from .camera import capture_photo, run_countdown
 bp = Blueprint("photobooth", __name__)
 
 
+def _frame_context() -> dict:
+    return {
+        "frame_url": url_for("photobooth.asset", filename=config.FRAME_IMAGE.name),
+        "frame_ratio": config.FRAME_ASPECT_RATIO,
+        "slot_left": config.FRAME_SLOT_LEFT_PCT,
+        "slot_top": config.FRAME_SLOT_TOP_PCT,
+        "slot_width": config.FRAME_SLOT_WIDTH_PCT,
+        "slot_height": config.FRAME_SLOT_HEIGHT_PCT,
+    }
+
+
 @bp.route("/", methods=["GET"])
 def index():
-    frame_url = url_for("photobooth.asset", filename=config.FRAME_IMAGE.name)
-    return render_template("home.html", year=datetime.now().year, frame_url=frame_url)
+    return render_template("home.html", year=datetime.now().year, **_frame_context())
 
 
 @bp.route("/capture_page", methods=["GET"])
 def capture_page():
     if not session.get("paid"):
         return redirect(url_for("photobooth.index"))
-    frame_url = url_for("photobooth.asset", filename=config.FRAME_IMAGE.name)
-    return render_template("capture.html", countdown=config.COUNTDOWN_SECONDS, frame_url=frame_url)
+    return render_template(
+        "capture.html",
+        countdown=config.COUNTDOWN_SECONDS,
+        **_frame_context(),
+    )
 
 
 @bp.route("/confirm_payment", methods=["POST"])
@@ -90,4 +104,9 @@ def serve_capture(filename: str):
 
 @bp.route("/assets/<path:filename>", methods=["GET"])
 def asset(filename: str):
+    if not config.ASSETS_DIR.exists():
+        abort(404)
+    file_path = config.ASSETS_DIR / filename
+    if not file_path.exists():
+        abort(404)
     return send_from_directory(str(config.ASSETS_DIR), filename)
