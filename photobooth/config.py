@@ -8,7 +8,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parent
 
 # Core configuration values for the photo booth.
-COUNTDOWN_SECONDS = 15
+COUNTDOWN_SECONDS = 5
 OUTPUT_DIR = PROJECT_ROOT / "captures"
 CAMERA_INDEX = 0
 SECRET_KEY = "local-dev-secret"  # Replace for production deployment
