@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Photo Booth - Payment</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: "Inter", "Segoe UI", sans-serif;
+            background: radial-gradient(circle at top, #222, #0c0c0c);
+            color: #f5f5f5;
+        }
+        body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
+        header { padding: 1.5rem 3rem; display: flex; align-items: center; justify-content: space-between; background: rgba(12, 12, 12, 0.7); backdrop-filter: blur(8px); }
+        header h1 { margin: 0; font-size: 1.6rem; letter-spacing: 0.06em; text-transform: uppercase; }
+        header nav a { color: #f5f5f5; text-decoration: none; margin-left: 1.2rem; font-weight: 500; opacity: 0.8; }
+        header nav a:hover { opacity: 1; }
+        main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 2rem; max-width: 1100px; margin: 0 auto; width: 100%; }
+        @media (min-width: 992px) {
+            main { grid-template-columns: 1.3fr 1fr; align-items: start; }
+        }
+        .panel { background: rgba(18, 18, 18, 0.85); border-radius: 18px; padding: 1.8rem; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+        .panel h2 { margin-top: 0; font-size: 1.4rem; text-transform: uppercase; letter-spacing: 0.1em; }
+        .video-wrapper { position: relative; background: rgba(255, 255, 255, 0.04); border-radius: 16px; aspect-ratio: 4 / 3; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .video-wrapper video { width: 100%; height: 100%; object-fit: cover; }
+        .frame-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+        .preview-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 1rem; font-size: 1rem; opacity: 0.9; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(2px); }
+        .preview-placeholder[hidden] { display: none; }
+        .payment-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin: 1.2rem 0; }
+        .payment-option { border: 1px solid rgba(255, 255, 255, 0.1); padding: 1.4rem 1.1rem; border-radius: 14px; cursor: pointer; background: rgba(255, 255, 255, 0.03); transition: transform 0.2s ease, border-color 0.2s ease; }
+        .payment-option.selected { border-color: #4ade80; box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.15); transform: translateY(-4px); }
+        .payment-option h3 { margin: 0 0 0.3rem 0; font-size: 1.05rem; }
+        .payment-option p { margin: 0; font-size: 0.85rem; opacity: 0.8; }
+        button.primary { background: linear-gradient(135deg, #4ade80, #22c55e); border: none; color: #0c0c0c; font-weight: 600; padding: 0.85rem 1.6rem; border-radius: 999px; cursor: pointer; font-size: 1rem; transition: transform 0.2s ease; }
+        button.primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        button.primary:not(:disabled):hover { transform: translateY(-2px); }
+        #paymentStatus { margin-top: 1rem; font-size: 1rem; min-height: 1.5rem; }
+        a.action-link { display: inline-flex; align-items: center; margin-top: 1.3rem; padding: 0.75rem 1.4rem; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); color: #f5f5f5; text-decoration: none; font-weight: 500; transition: background 0.2s ease, transform 0.2s ease; }
+        a.action-link:hover { background: rgba(255, 255, 255, 0.1); transform: translateY(-1px); }
+        footer { padding: 1.5rem; text-align: center; font-size: 0.85rem; opacity: 0.6; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Neo Kiosk</h1>
+        <nav>
+            <a href="#">Theme</a>
+            <a href="#">Payments</a>
+            <a href="#">Support</a>
+        </nav>
+    </header>
+    <main>
+        <section class="panel">
+            <h2>Live Preview</h2>
+            <div class="video-wrapper">
+                <video id="preview" autoplay playsinline muted></video>
+                <img id="frameOverlay" class="frame-overlay" src="{{ frame_url }}" alt="Frame overlay">
+                <div id="previewPlaceholder" class="preview-placeholder">Initializing camera preview...</div>
+            </div>
+        </section>
+        <section class="panel">
+            <h2>Payment Method</h2>
+            <p style="margin-top:0.5rem; opacity:0.75;">Choose your payment option, complete the transaction, then proceed to capture.</p>
+            <div class="payment-options">
+                <div class="payment-option" data-method="promptpay">
+                    <h3>PromptPay</h3>
+                    <p>Scan QR to pay instantly.</p>
+                </div>
+                <div class="payment-option" data-method="wechat">
+                    <h3>WeChat Pay</h3>
+                    <p>For cross-border guests.</p>
+                </div>
+                <div class="payment-option" data-method="cash">
+                    <h3>Cash</h3>
+                    <p>Staff will confirm manually.</p>
+                </div>
+            </div>
+            <button id="confirmPayment" class="primary" disabled>Confirm Payment</button>
+            <div id="paymentStatus"></div>
+            <a id="proceedLink" class="action-link" href="{{ url_for('photobooth.capture_page') }}" hidden>Continue to Capture</a>
+        </section>
+    </main>
+    <footer>&copy; {{ year }} Neo Kiosk &bull; Designed for immersive photo moments</footer>
+    <script>
+        const paymentOptions = Array.from(document.querySelectorAll('.payment-option'));
+        const confirmButton = document.getElementById('confirmPayment');
+        const statusEl = document.getElementById('paymentStatus');
+        const proceedLink = document.getElementById('proceedLink');
+        let selectedMethod = null;
+
+        paymentOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                paymentOptions.forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                selectedMethod = option.dataset.method;
+                confirmButton.disabled = false;
+                statusEl.textContent = '';
+            });
+        });
+
+        confirmButton.addEventListener('click', async () => {
+            if (!selectedMethod) return;
+            confirmButton.disabled = true;
+            statusEl.textContent = 'Processing payment...';
+            try {
+                const response = await fetch('/confirm_payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ method: selectedMethod })
+                });
+                if (!response.ok) {
+                    const payload = await response.json().catch(() => ({}));
+                    throw new Error(payload.error || 'Payment confirmation failed');
+                }
+                statusEl.textContent = 'Payment confirmed. You are ready to capture!';
+                proceedLink.hidden = false;
+            } catch (error) {
+                statusEl.textContent = error.message;
+            } finally {
+                confirmButton.disabled = false;
+            }
+        });
+
+        async function checkExistingPayment() {
+            try {
+                const response = await fetch('/payment_status');
+                if (!response.ok) return;
+                const data = await response.json();
+                if (data.paid) {
+                    statusEl.textContent = 'Payment already confirmed. You can proceed to capture.';
+                    proceedLink.hidden = false;
+                }
+            } catch (error) {
+                console.warn('Unable to verify payment status', error);
+            }
+        }
+
+        checkExistingPayment();
+
+        async function initPreview() {
+            const video = document.getElementById('preview');
+            const placeholder = document.getElementById('previewPlaceholder');
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                placeholder.textContent = 'Camera access is not supported in this browser.';
+                placeholder.hidden = false;
+                return;
+            }
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                video.srcObject = stream;
+                video.muted = true;
+                video.playsInline = true;
+                await video.play().catch(() => {});
+                placeholder.hidden = true;
+            } catch (error) {
+                console.warn('Camera access failed:', error);
+                let message = 'Unable to start camera preview.';
+                if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
+                    message = 'Camera permission denied. Check browser or system settings.';
+                } else if (error.name === 'NotReadableError') {
+                    message = 'Camera is already in use by another application.';
+                } else if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
+                    message = 'No compatible camera found.';
+                }
+                placeholder.textContent = message;
+                placeholder.hidden = false;
+            }
+        }
+
+        initPreview();
+    </script>
+</body>
+</html>

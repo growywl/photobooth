@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Photo Booth - Capture</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: "Inter", "Segoe UI", sans-serif;
+            background: linear-gradient(135deg, #0f172a, #020617);
+            color: #f8fafc;
+        }
+        body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+        .card { width: min(900px, 95vw); background: rgba(15, 23, 42, 0.85); border-radius: 22px; padding: 2.2rem; text-align: center; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); }
+        h1 { margin-top: 0; letter-spacing: 0.12em; text-transform: uppercase; font-size: 1.5rem; }
+        .preview-wrapper { position: relative; margin: 1.5rem auto; width: min(720px, 90vw); aspect-ratio: 4 / 3; border-radius: 16px; overflow: hidden; background: rgba(148, 163, 184, 0.08); display: flex; align-items: center; justify-content: center; }
+        .preview-wrapper video { width: 100%; height: 100%; object-fit: cover; }
+        .frame-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+        .preview-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 1rem; font-size: 1rem; opacity: 0.9; background: rgba(2, 6, 23, 0.6); backdrop-filter: blur(2px); }
+        .preview-placeholder[hidden] { display: none; }
+        .countdown-overlay { position: absolute; top: 8%; right: 10%; font-size: 3rem; font-weight: 700; letter-spacing: 0.08em; text-shadow: 0 8px 20px rgba(15, 23, 42, 0.6); pointer-events: none; }
+        #status { margin: 1.1rem 0; font-size: 1.1rem; min-height: 1.5rem; opacity: 0.8; }
+        button.primary { background: linear-gradient(135deg, #38bdf8, #0ea5e9); border: none; color: #0f172a; font-weight: 600; padding: 0.95rem 2.4rem; border-radius: 999px; cursor: pointer; font-size: 1.05rem; transition: transform 0.2s ease; display: inline-flex; align-items: center; gap: 0.5rem; }
+        button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.primary:not(:disabled):hover { transform: translateY(-2px); }
+        #photoContainer { margin-top: 1.5rem; }
+        #photoContainer img { max-width: 100%; border-radius: 16px; border: 8px solid rgba(59, 130, 246, 0.4); box-shadow: 0 10px 40px rgba(15, 23, 42, 0.45); }
+        a.back-link { display: inline-block; margin-top: 1.8rem; color: #93c5fd; text-decoration: none; }
+        a.back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Ready to Capture</h1>
+        <p style="opacity:0.75;">We will run a {{ countdown }} second countdown before taking a photo.</p>
+        <div class="preview-wrapper">
+            <video id="preview" autoplay playsinline muted></video>
+            <img id="frameOverlay" class="frame-overlay" src="{{ frame_url }}" alt="Frame overlay">
+            <div id="previewPlaceholder" class="preview-placeholder">Initializing camera preview...</div>
+            <div id="countdownOverlay" class="countdown-overlay"></div>
+        </div>
+        <button id="startBtn" class="primary">Start Countdown</button>
+        <div id="status"></div>
+        <div id="photoContainer"></div>
+        <a href="{{ url_for('photobooth.index') }}" class="back-link">&larr; Back to payment</a>
+    </div>
+    <script>
+        const countdownSeconds = {{ countdown }};
+        const startBtn = document.getElementById('startBtn');
+        const statusEl = document.getElementById('status');
+        const photoContainer = document.getElementById('photoContainer');
+        const countdownOverlay = document.getElementById('countdownOverlay');
+        const previewVideo = document.getElementById('preview');
+        const previewPlaceholder = document.getElementById('previewPlaceholder');
+        let previewStream = null;
+        let countdownTimer = null;
+
+        function showPlaceholder(message) {
+            previewPlaceholder.textContent = message;
+            previewPlaceholder.hidden = false;
+        }
+
+        function hidePlaceholder() {
+            previewPlaceholder.hidden = true;
+        }
+
+        async function initPreview() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showPlaceholder('Camera access is not supported in this browser.');
+                return;
+            }
+            try {
+                previewStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                previewVideo.srcObject = previewStream;
+                previewVideo.muted = true;
+                previewVideo.playsInline = true;
+                await previewVideo.play().catch(() => {});
+                hidePlaceholder();
+            } catch (error) {
+                console.warn('Camera access failed:', error);
+                let message = 'Unable to start camera preview.';
+                if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
+                    message = 'Camera permission denied. Check browser or system settings.';
+                } else if (error.name === 'NotReadableError') {
+                    message = 'Camera is already in use by another application.';
+                } else if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
+                    message = 'No compatible camera found.';
+                }
+                showPlaceholder(message);
+            }
+        }
+
+        async function stopPreview(message) {
+            if (previewStream) {
+                previewStream.getTracks().forEach(track => track.stop());
+                previewStream = null;
+            }
+            previewVideo.srcObject = null;
+            if (message) {
+                showPlaceholder(message);
+            }
+        }
+
+        function resetCountdownOverlay() {
+            countdownOverlay.textContent = '';
+        }
+
+        function clearCountdownTimer() {
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+        }
+
+        async function performCapture() {
+            await stopPreview('Capturing photo...');
+            await new Promise(resolve => setTimeout(resolve, 350));
+
+            const response = await fetch('/capture', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ skipCountdown: true })
+            });
+
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.error || 'Capture failed');
+            }
+
+            const data = await response.json();
+            statusEl.textContent = 'Capture complete!';
+            startBtn.textContent = 'Capture Again';
+            resetCountdownOverlay();
+
+            if (data.photoUrl) {
+                const img = document.createElement('img');
+                img.alt = 'Latest capture';
+                img.src = `${data.photoUrl}?t=${Date.now()}`;
+                photoContainer.appendChild(img);
+            }
+
+            await initPreview();
+        }
+
+        async function startCapture() {
+            if (countdownTimer) {
+                return;
+            }
+
+            startBtn.disabled = true;
+            startBtn.textContent = 'Countdown in progress';
+            statusEl.textContent = `Capturing in ${countdownSeconds}s`;
+            photoContainer.innerHTML = '';
+            let remaining = countdownSeconds;
+            countdownOverlay.textContent = remaining;
+
+            countdownTimer = setInterval(async () => {
+                remaining -= 1;
+                if (remaining > 0) {
+                    countdownOverlay.textContent = remaining;
+                    statusEl.textContent = `Capturing in ${remaining}s`;
+                    return;
+                }
+
+                clearCountdownTimer();
+                countdownOverlay.textContent = 'SNAP!';
+
+                try {
+                    await performCapture();
+                } catch (error) {
+                    statusEl.textContent = error.message;
+                    startBtn.textContent = 'Start Countdown';
+                    resetCountdownOverlay();
+                    await initPreview();
+                } finally {
+                    startBtn.disabled = false;
+                }
+            }, 1000);
+        }
+
+        startBtn.addEventListener('click', async () => {
+            const paidResponse = await fetch('/payment_status');
+            if (!paidResponse.ok) {
+                statusEl.textContent = 'Unable to verify payment status.';
+                return;
+            }
+            const paidData = await paidResponse.json();
+            if (!paidData.paid) {
+                statusEl.textContent = 'Payment required before capture. Returning to payment screen...';
+                setTimeout(() => { window.location.href = '/'; }, 1800);
+                return;
+            }
+            startCapture();
+        });
+
+        initPreview();
+    </script>
+</body>
+</html>
