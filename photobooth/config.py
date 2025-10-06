@@ -18,10 +18,10 @@ ASSETS_DIR = PACKAGE_DIR / "assets"
 FRAME_IMAGE = ASSETS_DIR / "breaking_news_frame.png"
 
 # Coordinates (in pixels) describing where the captured photo should appear on the frame.
-FRAME_SLOT_X = 560
-FRAME_SLOT_Y = 600
-FRAME_SLOT_WIDTH = 750
-FRAME_SLOT_HEIGHT = 750
+FRAME_SLOT_X = 30
+FRAME_SLOT_Y = 500
+FRAME_SLOT_WIDTH = 1000
+FRAME_SLOT_HEIGHT = 600
 
 # Derived frame metadata
 _FALLBACK_WIDTH = 1086
