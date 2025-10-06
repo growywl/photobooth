@@ -20,19 +20,22 @@
         .preview-placeholder[hidden] { display: none; }
         .countdown-overlay { position: absolute; top: 5%; right: 6%; font-size: 3.2rem; font-weight: 700; letter-spacing: 0.08em; text-shadow: 0 8px 20px rgba(15, 23, 42, 0.6); pointer-events: none; }
         #status { margin: 1.1rem 0; font-size: 1.1rem; min-height: 1.5rem; opacity: 0.8; }
+        #printStatus { font-size: 1rem; opacity: 0.7; margin-bottom: 1rem; min-height: 1.2rem; }
         button.primary { background: linear-gradient(135deg, #38bdf8, #0ea5e9); border: none; color: #0f172a; font-weight: 600; padding: 0.95rem 2.4rem; border-radius: 999px; cursor: pointer; font-size: 1.05rem; transition: transform 0.2s ease; display: inline-flex; align-items: center; gap: 0.5rem; }
         button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
         button.primary:not(:disabled):hover { transform: translateY(-2px); }
         #photoContainer { margin-top: 1.5rem; }
         #photoContainer img { max-width: 100%; border-radius: 16px; box-shadow: 0 10px 40px rgba(15, 23, 42, 0.45); }
+        #qrContainer { margin-top: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+        #qrContainer img { width: 150px; height: 150px; object-fit: contain; background: #fff; padding: 0.75rem; border-radius: 18px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.4); }
         a.back-link { display: inline-block; margin-top: 1.8rem; color: #93c5fd; text-decoration: none; }
         a.back-link:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Ready to Capture</h1>
-        <p style="opacity:0.75;">We will run a {{ countdown }} second countdown before taking a photo.</p>
+        <h1>Capturing Moment</h1>
+        <p style="opacity:0.75;">Stand still and smile. We will capture automatically after the countdown.</p>
         <div
             class="preview-wrapper"
             style="aspect-ratio: {{ '%.4f'|format(frame_ratio) }}; --slot-left: {{ '%.4f'|format(slot_left * 100) }}%; --slot-top: {{ '%.4f'|format(slot_top * 100) }}%; --slot-width: {{ '%.4f'|format(slot_width * 100) }}%; --slot-height: {{ '%.4f'|format(slot_height * 100) }}%;"
@@ -42,22 +45,32 @@
             <div id="previewPlaceholder" class="preview-placeholder">Initializing camera preview...</div>
             <div id="countdownOverlay" class="countdown-overlay"></div>
         </div>
-        <button id="startBtn" class="primary">Start Countdown</button>
+        <button id="startBtn" class="primary" style="display:none;">Retake Photo</button>
         <div id="status"></div>
+        <div id="printStatus"></div>
         <div id="photoContainer"></div>
+        <div id="qrContainer" hidden>
+            <img id="qrImage" alt="Download QR">
+            <a id="downloadLink" href="#" target="_blank" rel="noopener" style="color:#f8fafc; text-decoration: underline;">Download photo</a>
+        </div>
         <a href="{{ url_for('photobooth.index') }}" class="back-link">&larr; Back to payment</a>
     </div>
     <script>
         const countdownSeconds = {{ countdown }};
         const startBtn = document.getElementById('startBtn');
         const statusEl = document.getElementById('status');
+        const printStatusEl = document.getElementById('printStatus');
         const photoContainer = document.getElementById('photoContainer');
         const countdownOverlay = document.getElementById('countdownOverlay');
         const previewVideo = document.getElementById('preview');
         const previewPlaceholder = document.getElementById('previewPlaceholder');
+        const qrContainer = document.getElementById('qrContainer');
+        const qrImage = document.getElementById('qrImage');
+        const downloadLink = document.getElementById('downloadLink');
 
         let previewStream = null;
         let countdownTimer = null;
+        let hasCapturedOnce = false;
 
         function showPlaceholder(message) {
             previewPlaceholder.textContent = message;
@@ -116,6 +129,37 @@
             }
         }
 
+        function updatePrintStatus(printStatus) {
+            if (!printStatus) {
+                printStatusEl.textContent = '';
+                return;
+            }
+            if (printStatus === 'sent') {
+                printStatusEl.textContent = 'Printing... Please wait for your photo.';
+            } else if (printStatus === 'failed') {
+                printStatusEl.textContent = 'Printing failed. Please check the printer.';
+            } else if (printStatus === 'disabled') {
+                printStatusEl.textContent = '';
+            } else {
+                printStatusEl.textContent = printStatus;
+            }
+        }
+
+        function showQr(downloadUrl, qrUrl) {
+            if (!downloadUrl) {
+                qrContainer.hidden = true;
+                return;
+            }
+            downloadLink.href = downloadUrl;
+            qrContainer.hidden = false;
+            if (qrUrl) {
+                qrImage.src = `${qrUrl}?t=${Date.now()}`;
+                qrImage.hidden = false;
+            } else {
+                qrImage.hidden = true;
+            }
+        }
+
         async function performCapture() {
             await stopPreview('Capturing photo...');
             await new Promise(resolve => setTimeout(resolve, 350));
@@ -133,8 +177,11 @@
 
             const data = await response.json();
             statusEl.textContent = 'Capture complete!';
-            startBtn.textContent = 'Capture Again';
             resetCountdownOverlay();
+            hasCapturedOnce = true;
+            startBtn.style.display = 'inline-flex';
+            startBtn.textContent = 'Retake Photo';
+            startBtn.disabled = false;
 
             if (data.photoUrl) {
                 const img = document.createElement('img');
@@ -144,18 +191,39 @@
                 photoContainer.appendChild(img);
             }
 
+            updatePrintStatus(data.printStatus);
+            showQr(data.downloadUrl, data.qrUrl);
+
             await initPreview();
+        }
+
+        async function ensurePayment() {
+            const paidResponse = await fetch('/payment_status');
+            if (!paidResponse.ok) {
+                statusEl.textContent = 'Unable to verify payment status.';
+                return false;
+            }
+            const paidData = await paidResponse.json();
+            if (!paidData.paid) {
+                statusEl.textContent = 'Payment required before capture. Returning to payment screen...';
+                setTimeout(() => { window.location.href = '/'; }, 1800);
+                return false;
+            }
+            return true;
         }
 
         async function startCapture() {
             if (countdownTimer) {
                 return;
             }
+            if (!(await ensurePayment())) {
+                return;
+            }
 
             startBtn.disabled = true;
-            startBtn.textContent = 'Countdown in progress';
             statusEl.textContent = `Capturing in ${countdownSeconds}s`;
             photoContainer.innerHTML = '';
+            qrContainer.hidden = true;
             let remaining = countdownSeconds;
             countdownOverlay.textContent = remaining;
 
@@ -174,31 +242,25 @@
                     await performCapture();
                 } catch (error) {
                     statusEl.textContent = error.message;
-                    startBtn.textContent = 'Start Countdown';
+                    startBtn.textContent = 'Try Again';
+                    startBtn.style.display = 'inline-flex';
+                    startBtn.disabled = false;
                     resetCountdownOverlay();
                     await initPreview();
-                } finally {
-                    startBtn.disabled = false;
                 }
             }, 1000);
         }
 
-        startBtn.addEventListener('click', async () => {
-            const paidResponse = await fetch('/payment_status');
-            if (!paidResponse.ok) {
-                statusEl.textContent = 'Unable to verify payment status.';
-                return;
+        startBtn.addEventListener('click', () => {
+            if (!countdownTimer) {
+                startCapture();
             }
-            const paidData = await paidResponse.json();
-            if (!paidData.paid) {
-                statusEl.textContent = 'Payment required before capture. Returning to payment screen...';
-                setTimeout(() => { window.location.href = '/'; }, 1800);
-                return;
-            }
-            startCapture();
         });
 
-        initPreview();
+        (async () => {
+            await initPreview();
+            await startCapture();
+        })();
     </script>
 </body>
 </html>

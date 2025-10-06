@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -16,8 +16,8 @@
         header nav a { color: #f5f5f5; text-decoration: none; margin-left: 1.2rem; font-weight: 500; opacity: 0.8; }
         header nav a:hover { opacity: 1; }
         main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 2rem; max-width: 1100px; margin: 0 auto; width: 100%; }
-        @media (min-width: 992px) {
-            main { grid-template-columns: 1.3fr 1fr; align-items: start; }
+        @media (min-width: 1100px) {
+            main { grid-template-columns: 1.2fr 1fr; align-items: start; }
         }
         .panel { background: rgba(18, 18, 18, 0.85); border-radius: 18px; padding: 1.8rem; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05); }
         .panel h2 { margin-top: 0; font-size: 1.4rem; text-transform: uppercase; letter-spacing: 0.1em; }
@@ -31,7 +31,11 @@
         .payment-option.selected { border-color: #4ade80; box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.15); transform: translateY(-4px); }
         .payment-option h3 { margin: 0 0 0.3rem 0; font-size: 1.05rem; }
         .payment-option p { margin: 0; font-size: 0.85rem; opacity: 0.8; }
-        button.primary { background: linear-gradient(135deg, #4ade80, #22c55e); border: none; color: #0c0c0c; font-weight: 600; padding: 0.85rem 1.6rem; border-radius: 999px; cursor: pointer; font-size: 1rem; transition: transform 0.2s ease; }
+        .payment-detail { border: 1px dashed rgba(255, 255, 255, 0.2); border-radius: 14px; padding: 1.2rem; margin-top: 1.2rem; background: rgba(255, 255, 255, 0.04); }
+        .payment-detail img { width: 100%; max-width: 240px; border-radius: 12px; background: #fff; padding: 0.75rem; box-shadow: 0 12px 30px rgba(0,0,0,0.35); }
+        .payment-detail .password-group { margin-top: 1rem; display: flex; gap: 0.75rem; align-items: center; }
+        .payment-detail input[type="password"] { flex: 1; padding: 0.6rem 0.9rem; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0,0,0,0.35); color: inherit; font-size: 1rem; }
+        button.primary { background: linear-gradient(135deg, #4ade80, #22c55e); border: none; color: #0c0c0c; font-weight: 600; padding: 0.85rem 1.6rem; border-radius: 999px; cursor: pointer; font-size: 1rem; transition: transform 0.2s ease; width: 100%; margin-top: 1.2rem; }
         button.primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
         button.primary:not(:disabled):hover { transform: translateY(-2px); }
         #paymentStatus { margin-top: 1rem; font-size: 1rem; min-height: 1.5rem; }
@@ -42,7 +46,7 @@
 </head>
 <body>
     <header>
-        <h1>Rec.lab</h1>
+        <h1>Rec.lab Photo Booth</h1>
         <nav>
             <a href="#">Theme</a>
             <a href="#">Payments</a>
@@ -63,60 +67,132 @@
         </section>
         <section class="panel">
             <h2>Payment Method</h2>
-            <p style="margin-top:0.5rem; opacity:0.75;">Choose your payment option, complete the transaction, then proceed to capture.</p>
+            <p style="margin-top:0.5rem; opacity:0.75;">Choose your payment option, follow the instructions, then confirm to unlock the booth.</p>
             <div class="payment-options">
                 <div class="payment-option" data-method="promptpay">
                     <h3>PromptPay</h3>
-                    <p>Scan QR to pay instantly.</p>
+                    <p>Scan QR with your banking app.</p>
                 </div>
                 <div class="payment-option" data-method="wechat">
                     <h3>WeChat Pay</h3>
-                    <p>For cross-border guests.</p>
+                    <p>Ideal for international guests.</p>
                 </div>
                 <div class="payment-option" data-method="cash">
                     <h3>Cash</h3>
-                    <p>Staff will confirm manually.</p>
+                    <p>Staff confirmation required.</p>
+                </div>
+            </div>
+            <div id="paymentDetail" class="payment-detail" hidden>
+                <div id="paymentInstruction"></div>
+                <div id="qrWrapper" hidden>
+                    <img id="qrImage" alt="Payment QR code">
+                </div>
+                <div id="cashWrapper" class="password-group" hidden>
+                    <input id="cashPassword" type="password" placeholder="Enter staff password">
                 </div>
             </div>
             <button id="confirmPayment" class="primary" disabled>Confirm Payment</button>
             <div id="paymentStatus"></div>
-            <a id="proceedLink" class="action-link" href="{{ url_for('photobooth.capture_page') }}" hidden>Continue to Capture</a>
+            <a id="proceedLink" class="action-link" href="{{ url_for('photobooth.capture_page') }}" hidden>Continue to capture</a>
         </section>
     </main>
-    <footer>&copy; {{ year }} Rec.lab &bull; Designed for immersive photo moments</footer>
+    <footer>&copy; {{ year }} Rec.lab Photo Booth</footer>
     <script>
+        const promptpayUrl = {{ promptpay_url|tojson }};
+        const wechatUrl = {{ wechat_url|tojson }};
+
         const paymentOptions = Array.from(document.querySelectorAll('.payment-option'));
         const confirmButton = document.getElementById('confirmPayment');
         const statusEl = document.getElementById('paymentStatus');
         const proceedLink = document.getElementById('proceedLink');
+        const paymentDetail = document.getElementById('paymentDetail');
+        const paymentInstruction = document.getElementById('paymentInstruction');
+        const qrWrapper = document.getElementById('qrWrapper');
+        const qrImage = document.getElementById('qrImage');
+        const cashWrapper = document.getElementById('cashWrapper');
+        const cashPassword = document.getElementById('cashPassword');
+
         let selectedMethod = null;
+
+        const detailContent = {
+            promptpay: () => {
+                paymentInstruction.innerHTML = 'Scan the PromptPay QR code with your banking app. After the transfer completes, press Confirm Payment.';
+                if (promptpayUrl) {
+                    qrImage.src = promptpayUrl;
+                    qrWrapper.hidden = false;
+                } else {
+                    qrWrapper.hidden = true;
+                }
+                cashWrapper.hidden = true;
+            },
+            wechat: () => {
+                paymentInstruction.innerHTML = 'Scan the WeChat Pay QR code. Once the transaction is successful, press Confirm Payment.';
+                if (wechatUrl) {
+                    qrImage.src = wechatUrl;
+                    qrWrapper.hidden = false;
+                } else {
+                    qrWrapper.hidden = true;
+                }
+                cashWrapper.hidden = true;
+            },
+            cash: () => {
+                paymentInstruction.innerHTML = 'Collect the cash, then enter the staff password before continuing.';
+                qrWrapper.hidden = true;
+                cashWrapper.hidden = false;
+                cashPassword.value = '';
+                cashPassword.focus();
+            }
+        };
+
+        function updateConfirmState() {
+            if (!selectedMethod) {
+                confirmButton.disabled = true;
+                return;
+            }
+            if (selectedMethod === 'cash') {
+                confirmButton.disabled = cashPassword.value.trim().length === 0;
+            } else {
+                confirmButton.disabled = false;
+            }
+        }
 
         paymentOptions.forEach(option => {
             option.addEventListener('click', () => {
                 paymentOptions.forEach(opt => opt.classList.remove('selected'));
                 option.classList.add('selected');
                 selectedMethod = option.dataset.method;
-                confirmButton.disabled = false;
+                paymentDetail.hidden = false;
+                detailContent[selectedMethod]();
                 statusEl.textContent = '';
+                updateConfirmState();
             });
         });
+
+        cashPassword.addEventListener('input', updateConfirmState);
 
         confirmButton.addEventListener('click', async () => {
             if (!selectedMethod) return;
             confirmButton.disabled = true;
-            statusEl.textContent = 'Processing payment...';
+            statusEl.textContent = 'Checking payment...';
+            const body = { method: selectedMethod };
+            if (selectedMethod === 'cash') {
+                body.password = cashPassword.value.trim();
+            }
             try {
                 const response = await fetch('/confirm_payment', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ method: selectedMethod })
+                    body: JSON.stringify(body)
                 });
                 if (!response.ok) {
                     const payload = await response.json().catch(() => ({}));
                     throw new Error(payload.error || 'Payment confirmation failed');
                 }
-                statusEl.textContent = 'Payment confirmed. You are ready to capture!';
+                statusEl.textContent = 'Payment confirmed. Redirecting to capture...';
                 proceedLink.hidden = false;
+                setTimeout(() => {
+                    window.location.href = proceedLink.href;
+                }, 800);
             } catch (error) {
                 statusEl.textContent = error.message;
             } finally {
@@ -130,8 +206,11 @@
                 if (!response.ok) return;
                 const data = await response.json();
                 if (data.paid) {
-                    statusEl.textContent = 'Payment already confirmed. You can proceed to capture.';
+                    statusEl.textContent = 'Payment already confirmed. Redirecting...';
                     proceedLink.hidden = false;
+                    setTimeout(() => {
+                        window.location.href = proceedLink.href;
+                    }, 600);
                 }
             } catch (error) {
                 console.warn('Unable to verify payment status', error);
